@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>照片 → 3D → 打印 流水线</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0b0f14; --card:#141a22; --card2:#1a222c; --line:#26313d;
+  --txt:#e6edf3; --dim:#93a1b0; --green:#3fb950; --red:#f85149;
+  --blue:#58a6ff; --gold:#d4a72c; --purple:#bc8cff; --amber:#e3b341;
+}
+body{background:var(--bg);color:var(--txt);
+  font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  line-height:1.6;padding:28px 22px 80px}
+.wrap{max-width:1220px;margin:0 auto}
+h1{font-size:25px;font-weight:800;letter-spacing:.5px}
+h1 span{background:linear-gradient(90deg,#58a6ff,#bc8cff);-webkit-background-clip:text;
+  -webkit-text-fill-color:transparent}
+.sub{color:var(--dim);font-size:13.5px;margin-top:6px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:22px 24px;margin-bottom:20px}
+.panel h2{font-size:15px;font-weight:700;margin-bottom:14px;color:var(--txt);
+  display:flex;align-items:center;gap:8px}
+.panel h2 .hint{font-size:12px;color:var(--dim);font-weight:400}
+
+/* 上传区 */
+#drop{border:2px dashed var(--line);border-radius:14px;padding:38px 20px;text-align:center;
+  cursor:pointer;transition:.18s;background:var(--card2)}
+#drop:hover,#drop.over{border-color:var(--blue);background:#1b2532}
+#drop .big{font-size:34px;margin-bottom:8px}
+#drop .t{font-size:16px;font-weight:700}
+#drop .d{font-size:13px;color:var(--dim);margin-top:6px}
+#thumb{display:none;margin-top:16px;text-align:center}
+#thumb img{max-height:190px;border-radius:10px;border:1px solid var(--line)}
+
+/* 设置 */
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.opt label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px}
+.opt select,.opt input{width:100%;background:var(--card2);border:1px solid var(--line);
+  color:var(--txt);border-radius:9px;padding:8px 11px;font-size:13px;outline:none}
+.opt select:focus,.opt input:focus{border-color:var(--blue)}
+.keyrow{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--dim);
+  margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot.ok{background:var(--green)} .dot.no{background:var(--red)}
+
+/* 流程 */
+.flow{display:flex;gap:0;overflow-x:auto;padding:6px 2px 14px}
+.step{flex:0 0 auto;width:132px;position:relative;text-align:center}
+.step .cir{width:52px;height:52px;border-radius:15px;margin:0 auto 9px;
+  display:flex;align-items:center;justify-content:center;font-size:23px;
+  background:var(--card2);border:1.5px solid var(--line);transition:.2s}
+.step .nm{font-size:12.5px;font-weight:600;line-height:1.35}
+.step .dt{font-size:11px;color:var(--dim);margin-top:3px;min-height:30px;
+  padding:0 4px;word-break:break-all}
+.step .tm{font-size:10.5px;color:var(--dim);margin-top:2px}
+.step::after{content:"";position:absolute;top:26px;left:calc(50% + 30px);
+  width:calc(100% - 60px);height:2px;background:var(--line);z-index:-1}
+.step:last-child::after{display:none}
+.step.done .cir{border-color:var(--green);background:#0f2a17;box-shadow:0 0 0 3px #3fb95022}
+.step.running .cir{border-color:var(--blue);background:#0e2237;animation:pulse 1.3s infinite}
+.step.failed .cir{border-color:var(--red);background:#2a1113}
+.step.skipped .cir{border-color:var(--amber);background:#2a2310;opacity:.72}
+.step.done::after{background:var(--green)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 #58a6ff55}50%{box-shadow:0 0 0 9px #58a6ff11}}
+.badge{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:20px;
+  margin-top:4px;font-weight:700}
+.b-done{background:#1b3d24;color:#56d364}
+.b-running{background:#12293f;color:#79c0ff}
+.b-failed{background:#3d1b1e;color:#ff7b72}
+.b-skipped{background:#3a3316;color:#e3b341}
+.b-pending{background:#20272f;color:#8b949e}
+
+/* 日志 */
+#log{background:#0a0e13;border:1px solid var(--line);border-radius:11px;padding:14px 16px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.72;
+  max-height:260px;overflow-y:auto;white-space:pre-wrap;color:#b9c6d4}
+#log .g{color:var(--green)} #log .r{color:var(--red)} #log .y{color:var(--amber)}
+
+/* 表格/文件 */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:600;font-size:12px}
+td.r{text-align:right;color:var(--dim);font-family:ui-monospace,monospace;font-size:12px}
+.btn{background:var(--card2);border:1px solid var(--line);color:var(--txt);
+  border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer;transition:.15s;
+  font-weight:600;white-space:nowrap}
+.btn:hover{border-color:var(--blue);background:#1b2532}
+.btn.p{background:#1f6feb;border-color:#1f6feb}
+.btn.p:hover{background:#2f7ffb}
+.btn.g{background:#1b3d24;border-color:#2ea043;color:#56d364}
+.btn.g:hover{background:#215030}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.acts{display:flex;gap:7px;justify-content:flex-end;flex-wrap:wrap}
+.empty{color:var(--dim);font-size:13px;text-align:center;padding:22px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px}
+.kv div{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.kv .k{font-size:11.5px;color:var(--dim)}
+.kv .v{font-size:15px;font-weight:700;margin-top:2px}
+.warnbox{background:#2a2310;border:1px solid #5c4a17;border-radius:10px;
+  padding:11px 14px;font-size:12.5px;color:#e3b341;margin-top:12px}
+#runbar{display:flex;gap:11px;align-items:center;flex-wrap:wrap;margin-top:6px}
+#deliverbox{margin-top:16px}
+#hist{max-height:280px;overflow-y:auto}
+.hitem{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;
+  border:1px solid var(--line);background:var(--card2);margin-bottom:7px;cursor:pointer;
+  transition:.15s}
+.hitem:hover{border-color:var(--blue);background:#1b2532}
+.hitem.cur{border-color:var(--blue);background:#12233a}
+.hitem .hn{flex:1;min-width:0}
+.hitem .hn .t{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.hitem .hn .m{font-size:11px;color:var(--dim);margin-top:2px}
+.hitem .st{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:700;white-space:nowrap}
+.st-ok{background:#1b3d24;color:#56d364}
+.st-run{background:#12293f;color:#79c0ff}
+.st-bad{background:#3d1b1e;color:#ff7b72}
+.st-idle{background:#20272f;color:#8b949e}
+.dcard{background:linear-gradient(135deg,#0f2a17,#132a1c);border:1.5px solid #2ea043;
+  border-radius:14px;padding:20px 22px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.dcard .ic{font-size:38px}
+.dcard .info{flex:1;min-width:240px}
+.dcard .t{font-size:17px;font-weight:800;color:#56d364}
+.dcard .meta{font-size:12.5px;color:#9fb0a6;margin-top:5px;line-height:1.7}
+.dcard .btns{display:flex;gap:9px;flex-wrap:wrap}
+.dcard .btn{background:#1b3d24;border-color:#2ea043;color:#7ee2a0;font-weight:700}
+.dcard .btn:hover{background:#215030}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1><span>照片 → 3D → 打印</span> 流水线</h1>
+  <div class="sub">本地 Hunyuan3D（MLX/Metal）单图生 3D · 约 60 秒 · 无需云端 API · 产物直接可打印</div>
+
+  <!-- 历史任务 -->
+  <div class="panel">
+    <h2>历史任务 <span class="hint">刷新页面不会丢；点任意一条可回看它的步骤与产物</span>
+      <button class="btn" style="margin-left:auto" onclick="loadJobList()">↻ 刷新列表</button></h2>
+    <div id="hist"><div class="empty">加载中…</div></div>
+  </div>
+
+  <!-- ① 上传（起点） -->
+  <div class="panel">
+    <h2>① 上传图片 <span class="hint">整条流水线的起点</span></h2>
+    <div id="drop">
+      <div class="big">📤</div>
+      <div class="t">拖入图片，或点击选择</div>
+      <div class="d">建议：正面、光照均匀、背景干净、主体完整（不要被裁切）</div>
+      <input type="file" id="file" accept="image/*" hidden>
+    </div>
+    <div id="thumb"><img id="thumbimg"></div>
+  </div>
+
+  <!-- ② 参数 -->
+  <div class="panel">
+    <h2>② 参数 <span class="hint">默认值已按你的环境配好</span></h2>
+    <div class="opts">
+      <div class="opt"><label>图像模型（修复 / 多角度）</label>
+        <select id="model"></select></div>
+      <div class="opt"><label>重建精细度</label>
+        <select id="quality">
+          <option value="standard">标准 · 31 万面 · 约 60 秒</option>
+          <option value="high">高 · 71 万面 · 约 85 秒</option>
+          <option value="ultra" selected>超高 · 126 万面 · 约 100 秒（最推荐）</option>
+          <option value="max">大模型 turbo · 112 万面但碎 70 块 · 约 211 秒</option>
+        </select></div>
+      <div class="opt"><label>打印机型</label><select id="printer"></select></div>
+      <div class="opt"><label>喷嘴 / 层高</label>
+        <select id="nozzle"><option>0.4</option><option>0.2</option><option>0.6</option><option>0.8</option></select></div>
+      <div class="opt"><label>层高</label>
+        <select id="layer"><option>0.20</option><option>0.12</option><option>0.28</option></select></div>
+      <div class="opt"><label>材料</label>
+        <select id="filament">
+          <option>Bambu PLA Basic</option><option>Bambu PETG Basic</option>
+          <option>Bambu ABS</option><option>Bambu PLA Matte</option>
+        </select></div>
+      <div class="opt"><label>成品最长边（毫米）</label>
+        <input id="scale" type="number" value="100" min="20" max="250"></div>
+    </div>
+    <div class="keyrow">
+      <span class="dot" id="keydot"></span><span id="keytxt">检查 API Key…</span>
+      <span style="margin-left:auto" id="bambutxt"></span>
+    </div>
+    <div id="runbar">
+      <button class="btn p" id="run" disabled style="padding:9px 26px;font-size:14px">▶ 开始流水线</button>
+      <button class="btn" id="reset" disabled>重置</button>
+      <span class="sub" style="margin:0" id="status"></span>
+    </div>
+  </div>
+
+
+  <!-- ③ 提示词（可读可改） -->
+  <div class="panel">
+    <h2>③ 提示词 <span class="hint">在这里告诉 AI「主体是什么」，并可修改任何一段——跑之前能看到最终发出的完整文本</span></h2>
+
+    <div class="opt" style="margin-bottom:16px">
+      <label>主体是什么 <span style="color:var(--gold)">（必填 —— 会被注入到下面所有提示词里，写得越具体效果越好）</span></label>
+      <input id="subject" placeholder="例如：一个白色陶瓷马克杯，带把手 / 一尊木质关公像 / 一个戴黑框眼镜、穿深蓝色衬衫的中年男子半身像">
+      <div style="font-size:11.5px;color:var(--dim);margin-top:6px">
+        💡 写清「是什么 + 材质/颜色 + 关键特征」，模型才知道要保持什么不变。
+        不要只写「主体」或「东西」。
+      </div>
+    </div>
+
+    <div style="display:flex;gap:9px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn" id="ptToggle">▾ 展开/收起提示词编辑</button>
+      <button class="btn" id="ptSave">保存提示词</button>
+      <button class="btn" id="ptReset">恢复默认</button>
+      <span class="sub" style="margin:0" id="ptStatus"></span>
+    </div>
+
+    <div id="ptEditor" style="display:none">
+      <div id="ptFields"></div>
+      <div class="opt" style="margin-top:16px">
+        <label>角度清单（已停用 —— 现用 Hunyuan3D 单图重建，不再走多视角空间雕刻）</label>
+        <div id="ptAngles"></div>
+      </div>
+      <div class="opt" style="margin-top:14px">
+        <label>修复任务（按质量门检出的问题自动拼接）</label>
+        <div id="ptRepair"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <label style="display:block;font-size:12px;color:var(--dim);margin-bottom:6px">
+        最终发给模型的完整提示词（实时预览）
+        <select id="ptPreviewSel" style="margin-left:8px;width:auto;display:inline-block"></select>
+      </label>
+      <div id="ptPreview" style="background:#0a0e13;border:1px solid var(--line);border-radius:11px;
+        padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.7;
+        max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#b9c6d4">加载中…</div>
+    </div>
+  </div>
+
+  <!-- ④ 流程图 -->
+  <div class="panel">
+    <h2>④ 进度 <span class="hint">每步实时状态</span></h2>
+    <div class="flow" id="flow"></div>
+    <div id="gatebox"></div>
+  </div>
+
+  <!-- ⑤ 日志 -->
+  <div class="panel">
+    <h2>⑤ 运行日志</h2>
+    <div id="log">等待开始…</div>
+  </div>
+
+  <!-- ⑥ 产物 -->
+  <div class="panel">
+    <h2>⑥ 产物 <span class="hint">可随时下载；模型/切片文件可直接送进 Bambu Studio</span></h2>
+    <div id="files"><div class="empty">还没有产物</div></div>
+  </div>
+
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let jobId = null, stepsDef = [], es = null;
+
+const STATUS_TXT = {pending:"待执行", running:"进行中", done:"完成", failed:"失败", skipped:"跳过"};
+
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls)e.className=cls;
+  if(html!=null)e.innerHTML=html; return e; }
+
+function renderFlow(steps){
+  const f = $("#flow"); f.innerHTML = "";
+  stepsDef.forEach((d,i)=>{
+    const st = steps[d.id] || {status:"pending"};
+    const s = el("div","step "+st.status);
+    s.appendChild(el("div","cir",d.icon));
+    s.appendChild(el("div","nm",d.name));
+    s.appendChild(el("div","dt", st.detail || d.desc));
+    let tm = "";
+    if(st.t0 && st.t1) tm = ((st.t1-st.t0).toFixed(1))+" 秒";
+    else if(st.t0) tm = "…";
+    s.appendChild(el("div","tm",tm));
+    s.appendChild(el("div","",`<span class="badge b-${st.status}">${STATUS_TXT[st.status]||st.status}</span>`));
+    f.appendChild(s);
+  });
+}
+
+function renderGate(g){
+  const b = $("#gatebox");
+  if(!g){ b.innerHTML=""; return; }
+  const pass = !g.problems || g.problems.length===0;
+  b.innerHTML = `<div class="kv" style="margin-top:6px">
+    <div><div class="k">质量门结论</div><div class="v" style="color:${pass?'var(--green)':'var(--red)'}">${pass?'✓ 通过':'✗ 需修复'}</div></div>
+    <div><div class="k">主体占比</div><div class="v">${(g["主体占比"]*100).toFixed(1)}%</div></div>
+    <div><div class="k">背景标准差</div><div class="v">${g["背景标准差"].toFixed(3)}</div></div>
+    <div><div class="k">主体触边</div><div class="v">${(g["触边侧"]&&g["触边侧"].length)?g["触边侧"].join("/"):"—"}</div></div>
+    <div><div class="k">零散碎块</div><div class="v">${g["零散碎块"]}</div></div>
+  </div>` + ((g.details&&g.details.length)?`<div class="warnbox">检测到问题：<br>${g.details.map(d=>"· "+d).join("<br>")}</div>`:"");
+}
+
+function renderDeliver(d){
+  const box = $("#deliverbox");
+  if(!d || !d.name){ box.innerHTML=""; return; }
+  const dims = d.dims || "";
+  const mf = d.manifold === true ? "封闭流形 ✓" : (d.manifold === false ? "非封闭 ✗" : "—");
+  box.innerHTML = `<div class="dcard">
+    <div class="ic">📦</div>
+    <div class="info">
+      <div class="t">交付文件已就绪：${d.name}</div>
+      <div class="meta">
+        尺寸 <b>${dims||"未知"}</b> · ${mf} · ${(d.size/1048576).toFixed(2)} MB<br>
+        这是最终 3D 打印文件（毫米单位）。切片请在 Bambu Studio 里完成。
+      </div>
+    </div>
+    <div class="btns">
+      <button class="btn" onclick="dl('${encodeURIComponent(d.name)}')">⬇ 下载 STL</button>
+      <button class="btn" onclick="bambu('${encodeURIComponent(d.name)}')">📦 在 Bambu Studio 中打开</button>
+    </div>
+  </div>`;
+}
+
+function renderFiles(files){
+  const box = $("#files");
+  if(!files || !files.length){ box.innerHTML='<div class="empty">还没有产物</div>'; return; }
+  const t = el("table");
+  t.innerHTML = "<thead><tr><th>文件</th><th class='r'>大小</th><th></th></tr></thead>";
+  const tb = el("tbody");
+  files.forEach(f=>{
+    const tr = el("tr");
+    const icon = f.ext==="gcode"?"🖨️":(f.ext==="stl"||f.ext==="obj")?"🧊":f.ext==="png"?"🖼️":"📄";
+    tr.appendChild(el("td","",`${icon} ${f.name}`));
+    tr.appendChild(el("td","r",(f.size/1024/1024>=1)?(f.size/1048576).toFixed(2)+" MB":(f.size/1024).toFixed(0)+" KB"));
+    const canBambu = ["stl","3mf","gcode","obj"].includes(f.ext);
+    tr.appendChild(el("td","",`<div class="acts">
+      <button class="btn" onclick="dl('${encodeURIComponent(f.name)}')">下载</button>
+      ${canBambu?`<button class="btn g" onclick="bambu('${encodeURIComponent(f.name)}')">📦 导入 Bambu Studio</button>`:""}
+    </div>`));
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+  box.innerHTML=""; box.appendChild(t);
+}
+
+function dl(name){ location.href = `/api/download?job_id=${jobId}&f=${name}`; }
+
+async function bambu(name){
+  if(!confirm("确认把该文件送进 Bambu Studio？")) return;
+  const r = await fetch("/api/import-bambu",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({job_id:jobId,f:decodeURIComponent(name)})});
+  const j = await r.json();
+  if(j.error) alert("导入失败："+j.error);
+}
+
+
+
+// ══════ 历史任务 ══════
+let CUR = null;
+
+function relTime(id){
+  // job id 形如 20260915_160036_548
+  const m = id.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+  if(!m) return id;
+  return `${m[4]}:${m[5]}:${m[6]}`;
+}
+
+async function loadJobList(){
+  let jobs = [];
+  try{ jobs = await fetch("/api/jobs").then(r=>r.json()); }catch(e){}
+  const box = $("#hist");
+  if(!jobs.length){ box.innerHTML = '<div class="empty">还没有历史任务</div>'; return; }
+  box.innerHTML = "";
+  jobs.forEach(j=>{
+    const d = el("div","hitem" + (j.id===CUR ? " cur" : ""));
+    let cls = "st-idle", txt = "未完成";
+    if(j.failed){ cls="st-bad"; txt="有失败"; }
+    else if(j.done){ cls="st-ok"; txt="已完成"; }
+    else { cls="st-run"; txt="进行中"; }
+    const dl = j.deliverable ? ` · 成品 ${j.deliverable.dims||""}` : "";
+    d.innerHTML = `<div class="hn">
+        <div class="t">${esc(j.name||j.id)}</div>
+        <div class="m">${relTime(j.id)} · ${j.steps_done}/${j.steps_total} 步 · ${j.nfiles} 个产物${dl}${j.subject?(" · 主体："+esc(j.subject)):""}</div>
+      </div><div class="st ${cls}">${txt}</div>`;
+    d.onclick = ()=> selectJob(j.id);
+    box.appendChild(d);
+  });
+}
+
+async function selectJob(id){
+  CUR = id; jobId = id;
+  localStorage.setItem("dsh_last_job", id);
+  const d = await fetch(`/api/state?job_id=${id}`).then(r=>r.json());
+  if(d.error){ alert("读取任务失败："+d.error); return; }
+  // 回填参数
+  const c = d.cfg || {};
+  if(c.subject) $("#subject").value = c.subject;
+  renderFlow(d.steps || {});
+  renderGate(d.gate);
+  renderFiles(d.files || []);
+  renderDeliver(d.deliverable);
+  const L = $("#log"); L.innerHTML = "";
+  (d.log||[]).forEach(t=>{
+    const s = document.createElement("div");
+    s.textContent = t;
+    if(t.includes("✗")) s.className="r"; else if(t.includes("✓")) s.className="g";
+    else if(t.includes("⚠")) s.className="y";
+    L.appendChild(s);
+  });
+  L.scrollTop = L.scrollHeight;
+  // 先断开上一条连接 —— 否则切了任务还收着旧任务的推送
+  if(es){ es.close(); es=null; }
+  $("#run").disabled = true; $("#reset").disabled = false;
+
+  if(d.done){
+    $("#status").textContent = "（历史任务，已结束）";
+    stopPolling();
+  } else {
+    $("#status").textContent = "● 该任务正在运行，实时同步中…";
+    // 接上 SSE 看实时状态
+    try{
+      es = new EventSource(`/api/stream?job_id=${id}`);
+      es.onmessage = onStream;
+      es.onerror = ()=>{ if(es){ es.close(); es=null; } };
+    }catch(e){}
+    startPolling(id);      // SSE 万一断开，用轮询兜底
+  }
+  await loadJobList();
+}
+
+let pollTimer = null;
+function startPolling(id){
+  stopPolling();
+  pollTimer = setInterval(async ()=>{
+    try{
+      const d = await fetch(`/api/state?job_id=${id}`).then(r=>r.json());
+      if(d.error) return;
+      renderFlow(d.steps||{}); renderGate(d.gate);
+      renderFiles(d.files||[]); renderDeliver(d.deliverable);
+      const L = $("#log");
+      if((d.log||[]).length > L.childElementCount){
+        L.innerHTML="";
+        d.log.forEach(t=>{ const s=document.createElement("div"); s.textContent=t;
+          if(t.includes("✗")) s.className="r"; else if(t.includes("✓")) s.className="g";
+          else if(t.includes("⚠")) s.className="y"; L.appendChild(s); });
+        L.scrollTop = L.scrollHeight;
+      }
+      loadJobList();
+      if(d.done){ $("#status").textContent="✓ 已结束"; stopPolling();
+        if(es){ es.close(); es=null; } }
+    }catch(e){}
+  }, 5000);
+}
+function stopPolling(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } }
+
+function onStream(ev){
+  const d = JSON.parse(ev.data);
+  renderFlow(d.steps); renderGate(d.gate); renderFiles(d.files);
+  if(d.deliverable) renderDeliver(d.deliverable);
+  if(d.logs && d.logs.length){
+    const L = $("#log");
+    d.logs.forEach(t=>{
+      const s = document.createElement("div"); s.textContent = t;
+      if(t.includes("✗")) s.className="r"; else if(t.includes("✓")) s.className="g";
+      else if(t.includes("⚠")) s.className="y";
+      L.appendChild(s);
+    });
+    L.scrollTop = L.scrollHeight;
+  }
+  if(d.done){ $("#status").textContent="✓ 流水线结束"; $("#run").disabled=false;
+    $("#reset").disabled=false; if(es){es.close(); es=null;} stopPolling(); loadJobList(); }
+}
+
+// ── 上传 ──
+const drop = $("#drop");
+drop.onclick = ()=> $("#file").click();
+drop.ondragover = e=>{e.preventDefault(); drop.classList.add("over");};
+drop.ondragleave = ()=> drop.classList.remove("over");
+drop.ondrop = e=>{e.preventDefault(); drop.classList.remove("over");
+  if(e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);};
+$("#file").onchange = e=>{ if(e.target.files[0]) upload(e.target.files[0]); };
+
+async function upload(file){
+  $("#log").textContent = "上传中…";
+  const buf = await file.arrayBuffer();
+  const r = await fetch("/api/upload?name="+encodeURIComponent(file.name),{method:"POST",body:buf,
+    headers:{"Content-Type":"application/octet-stream"}});
+  const j = await r.json();
+  jobId = j.job_id;
+  $("#thumb").style.display="block";
+  $("#thumbimg").src = URL.createObjectURL(file);
+  $("#run").disabled = false; $("#reset").disabled = false;
+  $("#status").textContent = `已接收：${file.name}（${(j.size/1024).toFixed(0)} KB）`;
+  $("#log").textContent = `[就绪] 图片已上传，点「开始流水线」\n文件名：${file.name}`;
+  renderFiles([]); $("#gatebox").innerHTML=""; renderDeliver(null);
+  renderFlow(Object.fromEntries(stepsDef.map(d=>[d.id,{status:"pending"}])));
+  CUR = jobId; localStorage.setItem("dsh_last_job", jobId);
+  loadJobList();
+}
+
+// ── 运行 ──
+$("#run").onclick = async ()=>{
+  if(!jobId) return;
+  const subj = ($("#subject").value||"").trim();
+  if(!subj || subj === "主体"){
+    alert("请先在【③ 提示词】面板里填写「主体是什么」。\n\n" +
+          "例如：一个白色陶瓷马克杯，带把手\n" +
+          "这个字段会被注入到所有提示词，直接决定模型知不知道要保持什么不变。");
+    $("#subject").focus();
+    $("#subject").style.borderColor = "var(--red)";
+    return;
+  }
+  const ql = $("#quality").selectedOptions[0].textContent.split(" · ")[0];
+  if(!confirm(`确认开始流水线？\n\n主体：${subj}\n精细度：${ql}\n3D 重建：本地 Hunyuan3D（不耗 API 额度）\n成品尺寸：${$("#scale").value} mm`)){
+    return;
+  }
+  $("#run").disabled=true; $("#reset").disabled=true;
+  $("#log").textContent="";
+  const cfg = {
+    model: $("#model").value,
+    provider: $("#model").selectedOptions[0].dataset.provider,
+    quality: $("#quality").value,
+    printer: $("#printer").value,
+    nozzle: $("#nozzle").value,
+    layer: $("#layer").value,
+    filament: $("#filament").value,
+    scale_to: parseFloat($("#scale").value)||100,
+    subject: $("#subject").value,
+    prompts: collectPrompts(),
+  };
+  await fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({job_id:jobId,config:cfg})});
+  if(es){ es.close(); es=null; }
+  CUR = jobId; localStorage.setItem("dsh_last_job", jobId);
+  es = new EventSource(`/api/stream?job_id=${jobId}`);
+  es.onmessage = onStream;
+  es.onerror = ()=>{ if(es){ es.close(); es=null; } };
+  startPolling(jobId);
+  loadJobList();
+};
+
+$("#reset").onclick = ()=>{
+  if(es) es.close();
+  jobId=null; $("#file").value="";
+  $("#thumb").style.display="none";
+  $("#run").disabled=true; $("#reset").disabled=true;
+  $("#status").textContent=""; $("#log").textContent="等待开始…";
+  $("#gatebox").innerHTML=""; renderFiles([]);
+  renderFlow(Object.fromEntries(stepsDef.map(d=>[d.id,{status:"pending"}])));
+};
+
+
+// ══════ 提示词面板 ══════
+let PT = null;
+const PT_FIELDS = [
+  ["identity_lock", "形象锁（放最前面，模型对开头最敏感）"],
+  ["turntable_lock", "转台相机约束（重建成败的关键）"],
+  ["view_line", "本次视角表述"],
+  ["negative_view", "负向约束"],
+  ["repair_framing", "修复-构图要求"],
+];
+
+function esc(t){ return (t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+
+async function loadPrompts(){
+  PT = await fetch("/api/prompts").then(r=>r.json());
+  $("#subject").value = PT.subject || "";
+  const box = $("#ptFields"); box.innerHTML="";
+  PT_FIELDS.forEach(([k,label])=>{
+    const d = el("div","opt"); d.style.marginBottom="12px";
+    d.innerHTML = `<label>${label}</label>
+      <textarea data-k="${k}" style="width:100%;min-height:110px;background:var(--card2);
+        border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 11px;
+        font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;outline:none;
+        resize:vertical">${esc(PT[k])}</textarea>`;
+    box.appendChild(d);
+  });
+  // 角度清单
+  const ab = $("#ptAngles"); ab.innerHTML="";
+  (PT.angle_specs||[]).forEach((sp,i)=>{
+    const d = el("div"); d.style.cssText="display:flex;gap:8px;align-items:center;margin-bottom:7px";
+    d.innerHTML = `<input data-ai="${i}" data-f="name" value="${esc(sp.name)}" style="width:90px;background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:5px 8px;font-size:12px">
+      <input data-ai="${i}" data-f="az" value="${sp.az}" style="width:70px;background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:5px 8px;font-size:12px">
+      <input data-ai="${i}" data-f="desc" value="${esc(sp.desc)}" style="flex:1;background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:5px 8px;font-size:11.5px">`;
+    ab.appendChild(d);
+  });
+  // 修复任务
+  const rb = $("#ptRepair"); rb.innerHTML="";
+  Object.entries(PT.repair_tasks||{}).forEach(([k,v])=>{
+    const d = el("div"); d.style.marginBottom="10px";
+    d.innerHTML = `<label style="color:var(--dim);font-size:11.5px">${k}</label>
+      <textarea data-rk="${k}" style="width:100%;min-height:64px;background:var(--card2);
+        border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:8px 10px;
+        font-family:ui-monospace,Menlo,monospace;font-size:11.5px;outline:none;resize:vertical">${esc(v)}</textarea>`;
+    rb.appendChild(d);
+  });
+  // 预览下拉
+  const sel = $("#ptPreviewSel");
+  sel.innerHTML = '<option value="修复">修复提示词</option>' +
+    (PT.angle_specs||[]).map(s2=>`<option value="${s2.name}">多角度 · ${s2.name} (${s2.az}°)</option>`).join("");
+  sel.onchange = refreshPreview;
+  $("#subject").oninput = refreshPreview;
+
+  await refreshPreview();
+}
+
+async function refreshPreview(){
+  const subj = encodeURIComponent($("#subject").value || "");
+  const d = await fetch("/api/prompts/preview?subject="+subj).then(r=>r.json());
+  const key = $("#ptPreviewSel").value || "修复";
+  const txt = (key === "修复") ? d["修复"] : (d["多角度"][key] || "");
+  const box = $("#ptPreview");
+  box.textContent = txt;
+  box.dataset.last = txt;
+}
+
+function collectPrompts(){
+  const out = Object.assign({}, PT);
+  out.subject = $("#subject").value;
+  document.querySelectorAll("#ptFields textarea").forEach(t=>{ out[t.dataset.k] = t.value; });
+  document.querySelectorAll("#ptRepair textarea").forEach(t=>{ out.repair_tasks[t.dataset.rk] = t.value; });
+  const specs = [];
+  document.querySelectorAll("#ptAngles input[data-f='name']").forEach((inp,i)=>{
+    const az = document.querySelector(`#ptAngles input[data-ai="${i}"][data-f="az"]`).value;
+    const desc = document.querySelector(`#ptAngles input[data-ai="${i}"][data-f="desc"]`).value;
+    specs.push({name: inp.value, az: parseFloat(az)||0, desc: desc});
+  });
+  out.angle_specs = specs;
+  return out;
+}
+
+$("#ptToggle").onclick = ()=>{
+  const e = $("#ptEditor");
+  e.style.display = e.style.display === "none" ? "block" : "none";
+  $("#ptToggle").textContent = e.style.display === "none" ? "▾ 展开/收起提示词编辑" : "▴ 收起提示词编辑";
+};
+$("#ptSave").onclick = async ()=>{
+  const r = await fetch("/api/prompts",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({prompts: collectPrompts()})});
+  const j = await r.json();
+  $("#ptStatus").textContent = j.ok ? "✓ 已保存" : "保存失败";
+  await refreshPreview();
+  setTimeout(()=>$("#ptStatus").textContent="", 2500);
+};
+$("#ptReset").onclick = async ()=>{
+  if(!confirm("恢复提示词为默认？你当前的修改会丢失。")) return;
+  await fetch("/api/prompts",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({reset:true})});
+  await loadPrompts();
+  await loadJobList();
+  const last = localStorage.getItem("dsh_last_job");
+  if(last) { try{ await selectJob(last); }catch(e){} }
+  $("#ptStatus").textContent = "✓ 已恢复默认";
+  setTimeout(()=>$("#ptStatus").textContent="", 2500);
+};
+
+// ── 初始化 ──
+(async ()=>{
+  const [steps, cfg] = await Promise.all([
+    fetch("/api/steps").then(r=>r.json()),
+    fetch("/api/config").then(r=>r.json())
+  ]);
+  stepsDef = steps;
+  renderFlow(Object.fromEntries(steps.map(d=>[d.id,{status:"pending"}])));
+
+  const sel = $("#model");
+  cfg.models.forEach(m=>{
+    const o = document.createElement("option");
+    o.value=m.id; o.dataset.provider=m.provider;
+    o.textContent=`[${m.provider_label}] ${m.label}` + (m.has_key?"":" ⚠️无Key");
+    sel.appendChild(o);
+  });
+  const pr = $("#printer");
+  cfg.printers.forEach(p=>{
+    const o=document.createElement("option"); o.value=p; o.textContent=p.replace("Bambu Lab ",""); pr.appendChild(o);
+  });
+  await loadPrompts();
+  await loadJobList();
+  const last = localStorage.getItem("dsh_last_job");
+  if(last) { try{ await selectJob(last); }catch(e){} }
+  const kd = $("#keydot"), kt = $("#keytxt");
+  if(cfg.has_key){ kd.className="dot ok"; kt.textContent = `API Key 已配置（${cfg.key_hint}）· ${cfg.base_url}`; }
+  else { kd.className="dot no"; kt.textContent = "未检测到 API Key —— 质量门可用，但 AI 修复与多角度会跳过"; }
+  $("#bambutxt").textContent = cfg.bambu_installed ? "Bambu Studio 已就绪 ✓" : "未找到 Bambu Studio";
+  if(cfg.large_weights_ready === false){
+    const o = document.querySelector('#quality option[value="max"]');
+    if(o){ o.disabled = true; o.textContent = "最高 · 大模型权重未下载"; }
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "_说明": "复制为 config.json 后按需修改。环境变量优先级更高（见 config.py）。",
+
+  "blender_bin": "/Applications/Blender.app/Contents/MacOS/Blender",
+  "bambu_bin": "/Applications/BambuStudio.app/Contents/MacOS/BambuStudio",
+  "bambu_resources": "/Applications/BambuStudio.app/Contents/Resources/profiles/BBL",
+
+  "hy3d_bin": "~/AI/Hunyuan3D-Swift/.build/release/hy3d",
+  "hy3d_weights_small": "~/AI/Hunyuan3D-Swift/weights/shape-small",
+  "hy3d_weights_large": "~/AI/Hunyuan3D-Swift/weights/shape-large",
+
+  "venv_python": ".venv/bin/python",
+
+  "_providers说明": "「AI 修复」这一步才需要。不用可选：不放任何 provider 也能跑（该步会自动跳过）",
+  "providers": {
+    "openai": {
+      "label": "OpenAI",
+      "base": "https://api.openai.com/v1",
+      "key_env": "OPENAI_API_KEY"
+    }
+  },
+  "models": [
+    ["openai", "gpt-image-1", "GPT-Image-1"]
+  ]
+}

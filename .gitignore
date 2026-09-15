@@ -1,0 +1,27 @@
+# 运行产物
+pipeline_ui/uploads/
+pipeline_ui/outputs/
+pipeline_ui/__pycache__/
+__pycache__/
+*.pyc
+
+# 本地配置（含密钥，绝不能提交）
+config.json
+.env
+
+# 虚拟环境
+.venv/
+.venv-rembg/
+
+# 模型权重（几 GB，用脚本下载）
+weights/
+
+# 测试与样例的大文件
+重建测试/
+质量门测试/
+3D打印测试/
+安装包/
+示例输出/
+
+# 系统
+.DS_Store
