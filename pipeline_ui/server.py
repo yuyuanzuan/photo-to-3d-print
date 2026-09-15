@@ -22,10 +22,16 @@ import urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)                 # blender/
+ROOT = os.path.dirname(HERE)                 # 仓库根目录
+sys.path.insert(0, ROOT)
+import config as CFG                         # ⚠ 必须早于任何 CFG.* 的使用（曾因放在
+                                             #   第 62 行导致启动即 NameError）
 UPLOADS = os.path.join(HERE, "uploads")
 OUTPUTS = os.path.join(HERE, "outputs")
 PORT = int(os.environ.get("PIPELINE_PORT", "8765"))
+# 监听地址：0.0.0.0 = 局域网可访问；127.0.0.1 = 仅本机。
+# 可以用 config.json 的 listen_host 或环境变量 PIPELINE_HOST 覆盖。
+HOST = CFG.get("listen_host", "0.0.0.0", "PIPELINE_HOST")
 
 # 本地 Hunyuan3D（MLX/Metal，单图生 3D）。路径全部来自 config.py，
 # 换机器只改 config.json 或设环境变量即可（见 config.example.json）
@@ -55,8 +61,6 @@ QUALITY_PRESETS = {
 }
 os.makedirs(UPLOADS, exist_ok=True)
 os.makedirs(OUTPUTS, exist_ok=True)
-sys.path.insert(0, ROOT)
-import config as CFG
 import importlib.util as _ilu
 def _load_pt():
     spec = _ilu.spec_from_file_location("提示词模板", os.path.join(ROOT, "提示词模板.py"))
@@ -87,6 +91,23 @@ def load_system_base(provider=None):
     if provider:
         return CFG.provider_base(provider)
     return next(iter(CFG.PROVIDERS.values()), {}).get("base", "")
+
+
+def load_system_key(provider=None):
+    """
+    取「已配置 Key 的第一个 provider」的 Key（provider 指定时取该 provider）。
+
+    历史说明：这里以前读的是本机的 ~/.dsh 私有凭据文件，属于个人环境耦合。
+    现在凭据统一由 config.py 提供（config.json 的 providers.<name>.key，
+    或对应环境变量），公开仓库里不含任何个人路径与密钥。
+    """
+    if provider:
+        return load_key_for(provider)
+    for name in CFG.PROVIDERS:
+        k = CFG.provider_key(name)
+        if k:
+            return k
+    return ""
 
 
 # provider 与模型清单都从 config 读（公开仓库里保持通用，私人中转放 config.json）
@@ -156,14 +177,20 @@ def emit(job_id, step_id=None, status=None, detail=None, log=None, files=None):
         return
     with LOCK:
         if step_id and status:
-            s = st["steps"][step_id]
-            s["status"] = status
-            if detail is not None:
-                s["detail"] = detail
-            if status == "running" and not s.get("t0"):
-                s["t0"] = time.time()
-            if status in ("done", "failed", "skipped"):
-                s["t1"] = time.time()
+            s = st["steps"].get(step_id)
+            if s is None:
+                # 步骤 id 不存在时只记日志，绝不抛异常。曾经的 bug：
+                # emit(jid, "import", ...) 引用了不存在的步骤，导致每次点
+                # 「在 Bambu Studio 中打开」都 KeyError → 500。
+                st["log"].append(f"[{now()}] ⚠ 未知步骤 {step_id}（状态更新已忽略）")
+            else:
+                s["status"] = status
+                if detail is not None:
+                    s["detail"] = detail
+                if status == "running" and not s.get("t0"):
+                    s["t0"] = time.time()
+                if status in ("done", "failed", "skipped"):
+                    s["t1"] = time.time()
         if log:
             st["log"].append(f"[{now()}] {log}")
         if files is not None:
@@ -828,7 +855,7 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.isdir(app):
                 return self._json({"error": "未找到 Bambu Studio"}, 404)
             subprocess.Popen(["open", "-a", app, p])
-            emit(jid, "import", "done", fn, log=f"已在 Bambu Studio 中打开：{fn}")
+            emit(jid, log=f"已在 Bambu Studio 中打开：{fn}")
             return self._json({"ok": True})
 
         return self._send(404, "not found", "text/plain")
@@ -867,14 +894,40 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.5)
 
 
+def lan_ips():
+    """取本机所有可用的局域网 IPv4 地址"""
+    import socket
+    ips = []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))          # 不会真的发包，只为拿到出口网卡地址
+        ips.append(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips and not ip.startswith("127."):
+                ips.append(ip)
+    except Exception:
+        pass
+    return ips
+
+
 def main():
     load_jobs()
-    print(f"流水线 UI 已启动： http://127.0.0.1:{PORT}")
+    print(f"流水线 UI 已启动")
+    print(f"  本机:    http://127.0.0.1:{PORT}")
+    if HOST == "0.0.0.0":
+        for ip in lan_ips():
+            print(f"  局域网:  http://{ip}:{PORT}")
+        print("  ⚠️ 局域网可达：同一网络下的设备都能打开，也会共用你的 API 额度")
     print(f"  已载入历史任务 {len(JOBS)} 个")
     print(f"  工作目录：{HERE}")
     print(f"  输出目录：{OUTPUTS}")
     print("  按 Ctrl+C 停止")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 
 if __name__ == "__main__":

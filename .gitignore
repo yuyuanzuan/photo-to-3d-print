@@ -2,6 +2,7 @@
 pipeline_ui/uploads/
 pipeline_ui/outputs/
 pipeline_ui/__pycache__/
+pipeline_ui/result.json
 __pycache__/
 *.pyc
 
